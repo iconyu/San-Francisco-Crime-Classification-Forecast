@@ -1,0 +1,210 @@
+import pandas as pd
+import numpy as np
+import re #正则表达式
+from sklearn import preprocessing
+import matplotlib.pyplot as plt
+'''
+1.数据读取
+'''
+def readFile(url):
+    data = pd.read_csv(url,parse_dates = ['Dates'])
+    return data
+'''
+2.增加特征：时间段
+'''
+def getHourZn(hour):
+    if(hour >= 1 and hour < 8): return 1;
+    if(hour >= 8 and hour < 12): return 2;
+    if(hour >= 12 and hour < 13): return 3;
+    if(hour >= 13 and hour < 15): return 4;
+    if(hour >= 15 and hour < 17): return 5;
+    if(hour >= 17 and hour < 19): return 6;
+    if(hour < 1 or hour >= 19): return 7;
+'''
+3.增加特征：季节段
+'''
+def getMonthZn(month):
+    if(month < 3 or month >= 12): return 1; #冬
+    if(month >= 3 and month < 6): return 2; #春
+    if(month >= 6 and month < 9): return 3; #夏
+    if(month >= 9 and month < 12): return 4; #秋
+'''
+4.地址是否包含/
+'''
+def define_address(addr):
+    addr_type = 0
+    if '/' in addr:
+        addr_type = 1
+    if 'Block' in addr:
+        addr_type = 0
+    return addr_type
+'''
+5.地址是否包含门牌号
+'''
+def Address_Num(addr):
+    if len(re.findall(r"\d+",addr)) == 0:
+        addr_num = 0
+    else:
+        addr_num = int(re.findall(r"\d+",addr)[0])
+    return addr_num
+'''
+6.数据预处理
+'''
+def preProcessData(data):
+    weekdays = {'Monday':0., 'Tuesday':1., 'Wednesday':2., 'Thursday': 3., 'Friday':4.,
+    'Saturday':5., 'Sunday':6.}
+    weekdays2 = {'Monday':0., 'Tuesday':0., 'Wednesday':0., 'Thursday': 0., 'Friday':0.,
+    'Saturday':1., 'Sunday':1}
+    districts = {c:i for i,c in enumerate(train['PdDistrict'].unique())}
+    Year = data.Dates.dt.year #年
+    Month = data.Dates.dt.month #月
+    Day = data.Dates.dt.day #日
+    Hour = data.Dates.dt.hour #时
+    Minute = data.Dates.dt.minute #分
+    Week = pd.DataFrame([float(weekdays[w]) for w in data.DayOfWeek]) #日期
+    isWeekday = pd.DataFrame([float(weekdays2[w]) for w in data.DayOfWeek]) #是否是周末
+    PdDistrict_Num = pd.DataFrame([float(districts[t]) for t in data.PdDistrict]) #街道编码
+    #PdDistrict_Num = pd.get_dummies(data.PdDistrict) #街道二值化编码
+    HourZn = pd.DataFrame(list(map(getHourZn,data['Dates'].dt.hour))) #时间段
+    MonthZn = pd.DataFrame(list(map(getMonthZn,data['Dates'].dt.month))) # 季节段
+    Address_Type = pd.DataFrame(list(map(define_address, data.Address)))
+    Address_num = pd.DataFrame(list(map(Address_Num,data.Address)))
+    X = data.X
+    Y = data.Y
+    leCrime = preprocessing.LabelEncoder()
+    CategoryNum = leCrime.fit_transform(data.Category) #犯罪类型数值化编码
+    data = pd.concat([Year,Month,Day,Hour,Minute,Week,isWeekday,PdDistrict_Num,HourZn,MonthZn,Address_Type,Address_num,X,Y],axis=1)
+    data['CategoryNum'] = CategoryNum
+    return data
+
+'''
+5.犯罪统计----按年份
+'''    
+def sumYear(train_data):
+    crime = train_data[['Year','event']].groupby(['Year']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+def sumMonth(train_data):
+    crime = train_data[['Month','event']].groupby(['Month']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+def sumDay(train_data):
+    crime = train_data[['Day','event']].groupby(['Day']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+def sumHour(train_data):
+    crime = train_data[['Hour','event']].groupby(['Hour']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+def sumMinute(train_data):
+    crime = train_data[['Minute','event']].groupby(['Minute']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+def sumWeek(train_data):
+    crime = train_data[['Week','event']].groupby(['Week']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+def sumPdDistrictNum(train_data):
+    crime = train_data[['PdDistrictNum','event']].groupby(['PdDistrictNum']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+    
+def sumAddressType(train_data):
+    crime = train_data[['AddressType','event']].groupby(['AddressType']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+    
+def sumAddressNum(train_data):
+    crime = train_data[['AddressNum','event']].groupby(['AddressNum']).count()
+    print(crime)
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+    
+#标签分布情况统计
+#返回一个字典，键是类别标签，值是这类记录数占总数的百分比分布。
+def get_class_distribution(y):
+    d = {}
+    set_y = set(y)
+    for y_label in set_y:
+        no_elements = len(np.where(y == y_label)[0])
+        d[y_label] = no_elements
+    dist_percentage = {class_label: count/(1.0*sum(d.values())) for class_label, count in d.items()}
+    return dist_percentage
+
+#按标签分布进行数据划分
+def print_class_label_split(data):
+    y_data = data[:,-1]
+    data_distribution = get_class_distribution(y_data)
+    print('\n Data set class label distribution')
+    data_distribution = sorted(data_distribution.items(),key = lambda x:x[1])
+    print(data_distribution)
+    
+'''
+3.犯罪类型与星期之间关系
+'''
+def categoryConnectWeek(train_data):
+    crime = train_data[['Category','DayOfWeek','event']].groupby(['Category','DayOfWeek']).count().reset_index()
+    crime_pivotl = crime.pivot(index = 'Category',columns='DayOfWeek',values='event')
+    print(crime_pivotl)
+'''
+4.犯罪统计----按类型
+'''    
+def sumCategory(train_data):
+    crime = train_data[['Category','event']].groupby(['Category']).count()
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+'''
+5.犯罪统计----按年份
+'''    
+def sumYear01(train_data):
+    crime = train_data[['year','event']].groupby(['year']).count()
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+'''
+4.犯罪统计----按月份
+'''    
+def sumMonth01(train_data):
+    crime = train_data[['month','event']].groupby(['month']).count()
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+'''
+4.犯罪统计----按星期
+'''    
+def sumWeek01(train_data):
+    crime = train_data[['DayOfWeek','event']].groupby(['DayOfWeek']).count()
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()    
+    
+'''
+4.犯罪统计----按时间
+'''    
+def sumHour01(train_data):
+    crime = train_data[['hour','event']].groupby(['hour']).count()
+    crime.plot(kind='barh',figsize=(8,8))#barh为横向画图
+    plt.show()
+    
+if __name__=='__main__':
+    train = readFile('train_data.csv')
+    train_data = preProcessData(train)
+    sort = train_data['CategoryNum'].value_counts()
+    train_data = train_data[train_data["CategoryNum"]==sort.index[1]]
+    train_data.columns = ['Year','Month','Day','Hour','Minute','Week','isWeekday','PdDistrictNum','HourZn','MonthZn','AddressType','AddressNum','X','Y','CategoryNum']
+    train_data['event'] = 1 
+    sumYear(train_data)
+    sumMonth(train_data)
+    sumDay(train_data)
+    sumHour(train_data)
+    sumMinute(train_data)
+    sumWeek(train_data)
+    sumPdDistrictNum(train_data)
+    sumAddressType(train_data)
+    sumAddressNum(train_data)
+    
