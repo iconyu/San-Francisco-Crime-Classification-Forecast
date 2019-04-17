@@ -1,0 +1,361 @@
+import pandas as pd 
+import numpy as np
+import re #正则表达式
+from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import BernoulliNB #朴素贝叶斯
+from sklearn.ensemble import RandomForestClassifier #随机森林
+from sklearn.tree import DecisionTreeClassifier #决策树
+from sklearn.neighbors import KNeighborsClassifier #KNN
+
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import chi2  #卡方检验
+from scipy.stats import pearsonr#皮尔森系数
+
+from sklearn.cross_validation import ShuffleSplit
+from sklearn.metrics import r2_score
+from collections import defaultdict
+
+'''
+1.数据读取
+'''
+def readFile(url):
+    data = pd.read_csv(url,parse_dates = ['Dates'])
+    return data
+    
+'''
+2.增加特征：时间段
+'''
+def getHourZn(hour):
+    if(hour >= 1 and hour < 8): return 1;
+    if(hour >= 8 and hour < 12): return 2;
+    if(hour >= 12 and hour < 13): return 3;
+    if(hour >= 13 and hour < 15): return 4;
+    if(hour >= 15 and hour < 17): return 5;
+    if(hour >= 17 and hour < 19): return 6;
+    if(hour < 1 or hour >= 19): return 7;
+    
+'''
+3.增加特征：季节段
+'''
+def getMonthZn(month):
+    if(month < 3 or month >= 12): return 1; #冬
+    if(month >= 3 and month < 6): return 2; #春
+    if(month >= 6 and month < 9): return 3; #夏
+    if(month >= 9 and month < 12): return 4; #秋
+    
+    
+'''
+4.地址是否包含/
+'''
+def define_address(addr):
+    addr_type = 0
+    if '/' in addr:
+        addr_type = 1
+    if 'Block' in addr:
+        addr_type = 0
+    return addr_type
+
+'''
+5.地址是否包含门牌号
+'''
+def Address_Num(addr):
+    if len(re.findall(r"\d+",addr)) == 0:
+        addr_num = 0
+    else:
+        addr_num = int(re.findall(r"\d+",addr)[0])
+    return addr_num
+
+'''
+6.数据预处理
+'''
+def preProcessData(data):
+    weekdays = {'Monday':0., 'Tuesday':1., 'Wednesday':2., 'Thursday': 3., 'Friday':4., 'Saturday':5., 'Sunday':6.}
+    weekdays2 = {'Monday':0., 'Tuesday':0., 'Wednesday':0., 'Thursday': 0., 'Friday':0., 'Saturday':1., 'Sunday':1}
+    districts = {c:i for i,c in enumerate(data['PdDistrict'].unique())}   
+    Year = data.Dates.dt.year #年
+    Month = data.Dates.dt.month #月
+    Day = data.Dates.dt.day #日
+    Hour = data.Dates.dt.hour #时
+    Minute = data.Dates.dt.minute #分
+    Week = pd.DataFrame([float(weekdays[w]) for w in data.DayOfWeek]) #日期
+    #Week= pd.get_dummies(data.DayOfWeek)
+    isWeekday = pd.DataFrame([float(weekdays2[w]) for w in data.DayOfWeek]) #是否是周末
+    PdDistrict_Num = pd.DataFrame([float(districts[t]) for t in data.PdDistrict]) #街道编码
+    #PdDistrict_Num = pd.get_dummies(data.PdDistrict) #街道二值化编码
+    BAYVIEW = PdDistrict_Num.iloc[:,0]
+    CENTRAL = PdDistrict_Num.iloc[:,1]
+    INGLESIDE = PdDistrict_Num.iloc[:,2]
+    MISSION = PdDistrict_Num.iloc[:,3]
+    NORTHERN = PdDistrict_Num.iloc[:,4]
+    PARK = PdDistrict_Num.iloc[:,5]
+    RICHMOND = PdDistrict_Num.iloc[:,6]
+    SOUTHERN = PdDistrict_Num.iloc[:,7]
+    TARAVAL = PdDistrict_Num.iloc[:,8]
+    TENDERLOIN = PdDistrict_Num.iloc[:,9]
+    #HourZn = pd.DataFrame(preprocessing.scale(list(map(getHourZn, data['Dates'].dt.hour)))) #时间段
+    #MonthZn = pd.DataFrame(preprocessing.scale(list(map(getMonthZn,data['Dates'].dt.month)))) #季节段
+    HourZn = pd.DataFrame(list(map(getHourZn, data['Dates'].dt.hour))) #时间段
+    MonthZn = pd.DataFrame(list(map(getMonthZn,data['Dates'].dt.month))) #季节段
+    Address_Type = pd.DataFrame(list(map(define_address, data.Address)))
+    Address_num = pd.DataFrame(list(map(Address_Num,data.Address)))
+    #X = pd.DataFrame(preprocessing.scale(list(map(lambda x: x+122.51364206429, data.X))))
+    #Y = pd.DataFrame(preprocessing.scale(list(map(lambda x: x-37.70787902, data.Y))))
+    X = pd.DataFrame(list(map(lambda x: x+122.51364206429, data.X)))
+    Y = pd.DataFrame(list(map(lambda x: x-37.70787902, data.Y)))
+    leCrime = preprocessing.LabelEncoder() 
+    CategoryNum = leCrime.fit_transform(data.Category)  #犯罪类型数值化编码
+    
+    #随机排序
+    #data = pd.concat([Year,Month,Day,Hour,Minute,Week,isWeekday,PdDistrict_Num,HourZn,MonthZn,Address_Type,Address_num,X,Y],axis=1)
+    #data.columns = ['Year','Month','Day','Hour','Minute','Week','isWeekday','BAYVIEW','CENTRAL','INGLESIDE','MISSION','NORTHERN','PARK','RICHMOND','SOUTHERN','TARAVAL','TENDERLOIN','HourZn','MonthZn','Address_Type','Address_num','X','Y']#重命名列
+    
+    #卡方验证--相关性排序
+    #data = pd.concat([Address_num,Minute,Address_Type,TENDERLOIN,Hour,BAYVIEW,HourZn,INGLESIDE,SOUTHERN,MISSION,CENTRAL,TARAVAL,NORTHERN,RICHMOND,PARK,Week,Day,isWeekday,Month,Year,MonthZn,Y,X],axis=1)
+    #data.columns = ['Address_num','Minute','Address_Type','TENDERLOIN','Hour','BAYVIEW','HourZn','INGLESIDE','SOUTHERN','MISSION','CENTRAL','TARAVAL','NORTHERN','RICHMOND','PARK','Week','Day','isWeekday','Month','Year','MonthZn','Y','X']
+    
+    #皮尔森系数
+    #data = pd.concat([Address_Type,TENDERLOIN,INGLESIDE,Address_num,BAYVIEW,Y,TARAVAL,Hour,HourZn,Minute,SOUTHERN,Year,CENTRAL,RICHMOND,NORTHERN,PARK,MISSION,Day,Week,X,MonthZn,isWeekday,Month],axis=1)
+    #data.columns = ['Address_Type','TENDERLOIN','INGLESIDE','Address_num','BAYVIEW','Y','TARAVAL','Hour','HourZn','Minute','SOUTHERN','Year','CENTRAL','RICHMOND','NORTHERN','PARK','MISSION','Day','Week','X','MonthZn','isWeekday','Month']
+   
+    #基于平均不纯度减少得分排序--从高到低
+    #data = pd.concat([Minute,Y,X,Address_num,Address_Type,Hour,Year,TENDERLOIN,HourZn,Day,SOUTHERN,BAYVIEW,Week,Month,CENTRAL,NORTHERN,INGLESIDE,MISSION,MonthZn,isWeekday,PARK,RICHMOND,TARAVAL],axis=1)
+    #data.columns = ['Minute','Y','X','Address_num','Address_Type','Hour','Year','TENDERLOIN','HourZn','Day','SOUTHERN','BAYVIEW','Week','Month','CENTRAL','NORTHERN','INGLESIDE','MISSION','MonthZn','isWeekday','PARK','RICHMOND','TARAVAL']
+   
+    #基于平均不纯度减少得分排序--从低到高
+    #data = pd.concat([TARAVAL,RICHMOND,PARK,isWeekday,MonthZn,MISSION,INGLESIDE,NORTHERN,CENTRAL,Month,Week,BAYVIEW,SOUTHERN,Day,HourZn,TENDERLOIN,Year,Hour,Address_Type,Address_num,X,Y,Minute],axis=1)
+    #data.columns = ['TARAVAL','RICHMOND','PARK','isWeekday','MonthZn','MISSION','INGLESIDE','NORTHERN','CENTRAL','Month','Week','BAYVIEW','SOUTHERN','Day','HourZn','TENDERLOIN','Year','Hour','Address_Type','Address_num','X','Y','Minute']
+    
+    #基于平均精确率减少得分排序
+    #data = pd.concat([Minute,Y,X,Address_Type,Year,Address_num,TENDERLOIN,Hour,SOUTHERN,HourZn,MISSION,BAYVIEW,NORTHERN,PARK,CENTRAL,INGLESIDE,Week,TARAVAL,isWeekday,Day,RICHMOND,MonthZn,Month],axis=1)
+    #data.columns = ['Minute','Y','X','Address_Type','Year','Address_num','TENDERLOIN','Hour','SOUTHERN','HourZn','MISSION','BAYVIEW','NORTHERN','PARK','CENTRAL','INGLESIDE','Week','TARAVAL','isWeekday','Day','RICHMOND','MonthZn','Month']
+    
+    #基于平均精确率减少得分排序
+    data = pd.concat([Month,MonthZn,RICHMOND,Day,isWeekday,TARAVAL,Week,INGLESIDE,CENTRAL,PARK,NORTHERN,BAYVIEW,MISSION,HourZn,SOUTHERN,Hour,TENDERLOIN,Address_num,Year,Address_Type,X,Y,Minute],axis=1)
+    data.columns = ['Month','MonthZn','RICHMOND','Day','isWeekday','TARAVAL','Week','INGLESIDE','CENTRAL','PARK','NORTHERN','BAYVIEW','MISSION','HourZn','SOUTHERN','Hour','TENDERLOIN','Address_num','Year','Address_Type','X','Y','Minute']
+   
+    data['CategoryNum'] = CategoryNum
+    return data
+
+'''
+卡方检验
+'''
+def squareTest(data):
+    data = abs(data.values) #dataframe转array
+    model = SelectKBest(chi2,k=23)
+    model.fit_transform(data[:,:-1],data[:,-1])
+    print(model.scores_)
+    print(model.pvalues_)
+'''
+皮尔森系数
+'''
+def pearsonTest(data):
+     print('Year与犯罪类型',pearsonr(data.Year,data.CategoryNum))
+     print('Month与犯罪类型',pearsonr(data.Month,data.CategoryNum))
+     print('Day与犯罪类型',pearsonr(data.Day,data.CategoryNum))
+     print('Hour与犯罪类型',pearsonr(data.Hour,data.CategoryNum))
+     print('Minute与犯罪类型',pearsonr(data.Minute,data.CategoryNum))
+     print('Week与犯罪类型',pearsonr(data.Week,data.CategoryNum))
+     print('isWeekday与犯罪类型',pearsonr(data.isWeekday,data.CategoryNum))
+     #print('PdDistrict_Num与犯罪类型',pearsonr(data.PdDistrict_Num,data.CategoryNum))
+     print('BAYVIEW与犯罪类型',pearsonr(data.BAYVIEW,data.CategoryNum))
+     print('CENTRAL与犯罪类型',pearsonr(data.CENTRAL,data.CategoryNum))
+     print('INGLESIDE与犯罪类型',pearsonr(data.INGLESIDE,data.CategoryNum))
+     print('MISSION与犯罪类型',pearsonr(data.MISSION,data.CategoryNum))
+     print('NORTHERN与犯罪类型',pearsonr(data.NORTHERN,data.CategoryNum))
+     print('PARK与犯罪类型',pearsonr(data.PARK,data.CategoryNum))
+     print('RICHMOND与犯罪类型',pearsonr(data.RICHMOND,data.CategoryNum))
+     print('SOUTHERN与犯罪类型',pearsonr(data.SOUTHERN,data.CategoryNum))
+     print('TARAVAL与犯罪类型',pearsonr(data.TARAVAL,data.CategoryNum))
+     print('TENDERLOIN与犯罪类型',pearsonr(data.TENDERLOIN,data.CategoryNum))
+     print('HourZn与犯罪类型',pearsonr(data.HourZn,data.CategoryNum))
+     print('MonthZn与犯罪类型',pearsonr(data.MonthZn,data.CategoryNum))
+     print('Address_Type与犯罪类型',pearsonr(data.Address_Type,data.CategoryNum))
+     print('Address_num与犯罪类型',pearsonr(data.Address_num,data.CategoryNum))
+     print('X与犯罪类型',pearsonr(data.Y,data.CategoryNum))
+     print('Y与犯罪类型',pearsonr(data.X,data.CategoryNum))
+'''
+训练集划分
+'''
+def splitTrainData(train_data):
+    training,validation = train_test_split(train_data,train_size=0.8)
+    training_data = training.iloc[:,:-1]
+    training_label = training['CategoryNum']
+    validation_data = validation.iloc[:,:-1]
+    validation_label = validation['CategoryNum']
+    return training_data,training_label,validation_data,validation_label
+
+'''
+测试集划分
+'''
+def splitTestData(test_data):
+    testing_data = test_data.iloc[:,:-1]
+    testing_label = test_data['CategoryNum']
+    return testing_data,testing_label
+
+'''
+随机森林训练
+'''
+def randomForestTrain(training_data,training_label,validation_data,validation_label):
+    rfModel = RandomForestClassifier(max_features="log2",max_depth=23, n_estimators=100,min_samples_split=300, oob_score=False)
+    #rfModel = RandomForestClassifier()
+    rfModel.fit(training_data,training_label)
+    rfPredicted = rfModel.predict(validation_data)
+    '''
+    loss = log_loss(validation_label,rfPredicted)
+    print("随机森林验证集损失值%",loss)
+    '''
+    validation_label = np.array(validation_label)
+    num = 0
+    for i in range(len(validation_label)):
+        if(rfPredicted[i] == validation_label[i]):
+            num = num + 1
+    accuracy = float(num/len(validation_label))
+    print("随机森林验证集正确率",accuracy)
+    #基于平均不纯度减少的特征重要性
+    importances = rfModel.feature_importances_
+    print(importances)
+
+    return rfModel
+
+'''
+随机森林训练---改良版
+'''
+def randomForestTrain_Cross(training_data,training_label,validation_data,validation_label):
+    names = ['Year','Month','Day','Hour','Minute','Week','isWeekday','BAYVIEW','CENTRAL','INGLESIDE','MISSION','NORTHERN','PARK','RICHMOND','SOUTHERN','TARAVAL','TENDERLOIN','HourZn','MonthZn','Address_Type','Address_num','X','Y']#重命名列
+
+    scores = defaultdict(list)  #定义一个字典
+    rfModel = RandomForestClassifier(max_features="log2",max_depth=23, n_estimators=100,min_samples_split=300, oob_score=False)
+    rfModel.fit(training_data,training_label)
+    
+    rfPredicted = rfModel.predict(validation_data)
+    validation_label = np.array(validation_label)
+    num = 0
+    for i in range(len(validation_label)):
+        if(rfPredicted[i] == validation_label[i]):
+            num = num + 1
+    accuracy = float(num/len(validation_label))
+    print("随机森林验证集正确率",accuracy)
+    '''
+    打乱特征数据顺序
+    '''      
+    for i in range(len(names)):  #列数
+        validation_data = np.array(validation_data)
+        X_t = validation_data.copy()
+        np.random.shuffle(X_t[:,i]) #打乱顺序函数
+        rfPredicted = rfModel.predict(X_t)
+        number = 0
+        for k in range(len(validation_label)):
+            if(rfPredicted[k] == validation_label[k]):
+                number = number + 1
+        shuff_accuracy = float(number/len(validation_label))
+        print(names[i],shuff_accuracy)
+        scores[names[i]].append((accuracy - shuff_accuracy) / accuracy) #改变准确率分数
+        
+    print("Features sorted by their score:")
+    #print(scores)
+    print(sorted( [(float('%.4f'%np.mean(score)), feat) for feat, score in scores.items()], reverse=True) )
+    
+'''
+7.KNN训练
+'''
+def knnTrain(training_data,training_label,validation_data,validation_label):
+    knnModel = KNeighborsClassifier(n_neighbors=50)
+    knnModel.fit(training_data,training_label)
+    knnPredicted = knnModel.predict(validation_data)
+    '''
+    loss = log_loss(validation_label,knnPredicted)
+    print("knn验证集损失值%",loss)
+    '''
+    validation_label = np.array(validation_label)
+    num = 0
+    for i in range(len(validation_label)):
+        if(knnPredicted[i] == validation_label[i]):
+            num = num + 1
+    accuracy = float(num/len(validation_label))
+    print("knn验证集正确率%",accuracy)
+    return knnModel
+
+'''
+决策树训练
+'''
+def dtTrain(training_data,training_label,validation_data,validation_label):
+    dtModel = DecisionTreeClassifier()
+    dtModel.fit(training_data,training_label)
+    dtPredicted = dtModel.predict(validation_data)
+    validation_label = np.array(validation_label)
+    num = 0
+    for i in range(len(validation_label)):
+        if(dtPredicted[i] == validation_label[i]):
+            num = num + 1
+    accuracy = float(num/len(validation_label))
+    print("决策树验证集正确率",accuracy)
+    return dtModel 
+
+
+'''
+朴素贝叶斯
+'''
+def bayesTrain(training_data,training_label,validation_data,validation_label):
+    bayesModel =BernoulliNB()
+    bayesModel.fit(training_data,training_label)#多维降一维
+    #predict_proba返回的是一个 n 行 k 列的数组， 第 i 行 第 j 列上的数值是模型预测 第 i 个预测样本为某个标签的概率，并且每一行的概率和为1
+    bayesPredicted = bayesModel.predict(validation_data)
+    #loss = log_loss(validation_label,bayesPredicted)
+    #print("朴素贝叶斯损失值%",loss)
+    validation_label = np.array(validation_label)
+    num = 0
+    for i in range(len(validation_label)):
+        if(bayesPredicted[i] == validation_label[i]):
+            num = num + 1
+    accuracy = float(num/len(validation_label))
+    print("朴素贝叶斯验证集正确率",accuracy)
+    return bayesModel
+        
+'''
+6.测试
+'''
+def Test(Model,testing_data,testing_label):
+    Predicted = Model.predict(testing_data)
+    '''
+    loss = log_loss(testing_label,Predicted)
+    print("测试集损失值%",loss)
+    '''
+    testing_label = np.array(testing_label)
+    num = 0
+    for i in range(len(testing_label)):
+        if(Predicted[i] == testing_label[i]):
+            num = num + 1
+    accuracy = float(num/len(testing_label))
+    print("测试集正确率",accuracy)
+
+if __name__=='__main__':
+    train = readFile('train_data.csv')
+    test = readFile('test_data.csv')
+    #train = train[train.Y != 90]
+    #train = train.reset_index(drop=True)  #重置索引
+    train_data = preProcessData(train)
+    #squareTest(train_data)
+    #pearsonTest(train_data)
+    
+    test_data = preProcessData(test) 
+    training_data,training_label,validation_data,validation_label = splitTrainData(train_data)
+    testing_data,testing_label = splitTestData(test_data)
+    
+    #randomForestTrain_Cross(training_data,training_label,validation_data,validation_label)
+    
+    #bayesModel = bayesTrain(training_data,training_label,validation_data,validation_label)
+    #Test(bayesModel,testing_data,testing_label)
+    
+    rfModel = randomForestTrain(training_data,training_label,validation_data,validation_label)
+    Test(rfModel,testing_data,testing_label)
+    
+    
+    #knnModel = knnTrain(training_data,training_label,validation_data,validation_label)
+    #Test(knnModel,testing_data,testing_label)
+    
+    #dtModel = dtTrain(training_data,training_label,validation_data,validation_label)
+    #Test(dtModel,testing_data,testing_label)
+    
+    
+    
